@@ -12,7 +12,7 @@
 #define str_node_buf(n) str_buf(n->data)
 
 #define str_init(s, l) &(struct str_s) {.buf = s, .len = l}
-#define str_node_new(s) node_new(node_type_str, str_init(s, strlen(s)), 0, 0)
+#define str_node_new(s) node_new(node_type_str, str_init(s, strlen(s)))
 
 struct str_s {
     char *buf;
@@ -20,4 +20,5 @@ struct str_s {
 };
 
 extern const struct node_type_s *node_type_str;
+
 #endif

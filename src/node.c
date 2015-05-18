@@ -1,46 +1,82 @@
+/*
+ * node.c
+ * Ilia Bykow, 2015
+ *
+ * Create generic, associative data types and structures.
+ *
+ * Nodes can act as vertices, edges, weighted edges, associative arrays
+ * and so on. The undrelying table structure is a dynamically resized array.
+ *
+ * All allocations and memory management is done internally, either here,
+ * or by functions specified by the node's type structure. This means
+ * that whether you're creating, modifying or destroying nodes you must use
+ * the handler functions provided.
+ *
+ * See str.c and str.h for an example of how to create a custom node
+ * structure and its associated node-type.
+ */
+
 #include "common.h"
 
+/*
+ * Macros
+ */
 #define node_table_full(n) (n->len == n->max)
-#define node_table_resize(n) \
-    (node_table_full(n) && !node_grow_table(n, n->max ? n->max << 1 : 2))
 
-#if 0
-struct data_s *data_copy(struct data_s *d)
+/*
+ * Clear a certain range of the node's table
+ */
+#define node_clear_table(n, from, to) \
+    memset((n)->table + (from), 0, (to) * sizeof(struct node_s *))
+
+/*
+ * Used by *node_type
+ */
+static void _node_free(void *data)
 {
-    if(!d)
-        return 0;
+    if(!data)
+        return;
 
-    struct data_s *copy = data_new(d->type, 0);
-    if(!copy)
-        return 0;
-
-    copy->value = (void *) malloc(sizeof(copy->type->size));
-    if(!copy->value) {
-        free(copy);
-        return 0;
-    }
-
-    memcpy(copy->value, d->value, copy->type->size);
-
-    return copy;
+    /*
+     * Re-use the existing destructor
+     */
+    node_free((struct node_s *) data);
 }
-#endif
 
+/*
+ * Used by *node_type
+ */
+static void *_node_new(const void *init)
+{
+    /*
+     * node_copy must check whether init exists
+     */
+    return (void *) node_copy(node_get(init));
+}
+
+/*
+ * Frees all child elements
+ */
 static void node_free_table(struct node_s *n)
 {
     while(n->len)
         node_free(n->table[--n->len]);
 
     free(n->table);
+
     n->table = 0;
     n->len = 0;
     n->max = 0;
 }
 
+/*
+ * Either shrinks or grows the table
+ */
 static size_t node_resize_table(struct node_s *n, size_t size)
 {
     if(!n || !size)
         return 0;
+
     struct node_s **new_table = (struct node_s **)
         realloc(n->table, sizeof(struct node_s *) * size);
 
@@ -53,51 +89,184 @@ static size_t node_resize_table(struct node_s *n, size_t size)
     return n->max;
 }
 
+/*
+ * Check to see if the table needs shrinking
+ * and shrink accordingly
+ */
+static size_t node_tighten_table(struct node_s *n)
+{
+    /*
+     * If n->max is 0 we cannot tighten any further
+     */
+    if(!n->max)
+        return 0;
+
+    /*
+     * Rewind back to the previous available element
+     */
+    for(; n->len && !n->table[n->len - 1]; n->len--)
+        ;
+
+    /*
+     * Use a 4 to 2 threshold: if we have 1/4 the elements,
+     * shrink the table by half.
+     */
+    if(!n->len)
+        node_free_table(n);
+    else if(n->len < (n->max >> 2))
+        node_resize_table(n, n->len << 1);
+
+    return n->max;
+}
+
+/*
+ * Remove the node from its owner's table if an owner exists.
+ * If an owner does exist, assume that it is a valid node
+ * and that it remembers us (ie. that its table has a record of us).
+ */
+static void node_emancipate(struct node_s *n)
+{
+    /*
+     * If we don't belong to anyone, there's nothing to do.
+     */
+    if(!n->owner)
+        return;
+
+    /*
+     * Remove ourselves from the owner's table *before* we
+     * attempt to tighten it.
+     */
+    n->owner->table[n->id] = 0;
+
+    /*
+     * Run the tightening operation because we may have cleared
+     * up enough room in the owner's table for it to be worth it.
+     */
+    node_tighten_table(n->owner);
+
+    /*
+     * Forget the owner and clear our id.
+     */
+    n->owner = 0;
+    n->id = 0;
+}
+
+/*
+ * Move the child element from its current owner (if any) to a new one.
+ * index specifies the position of the child element withing the new
+ * owner's table.
+ */
+static struct node_s *node_adopt(struct node_s *n, struct node_s *c, size_t index)
+{
+    /*
+     * Dissociate the child from the owner.
+     */
+    node_emancipate(c);
+
+    /*
+     * Adopt the new child and update the child's id.
+     */
+    n->table[index] = c;
+    c->owner = n;
+    c->id = index;
+
+    return c;
+}
+
+/*
+ * Free the current node, its value and recursively free
+ * all of its children and their values and so on.
+ */
 void node_free(struct node_s *n)
 {
+    /*
+     * Sanity check to make sure there is a node being passed in.
+     */
     if(!n)
         return;
 
+    /*
+     * After this, all the children along with the table itself
+     * will have been freed.
+     */
     if(n->table)
         node_free_table(n);
 
-    if(n->owner)
-        n->owner->table[n->id] = 0;
+    /*
+     * Remove ourselves from any owner nodes.
+     */
+    node_emancipate(n);
 
+    /*
+     * Finally, we free our own data, the pointer to it, and ourselves.
+     * We know how to free the data with the use of its type.
+     */
     n->type->freev(n->data);
     n->data = 0;
     free(n);
 }
 
-struct node_s *node_new(const struct node_type_s *type, const void *d,
-    struct node_s *owner, size_t max)
+/*
+ * Create a new node given a type and a const representation of the data.
+ */
+struct node_s *node_new(const struct node_type_s *type, const void *d)
 {
+    /*
+     * Sanitize the input, so we don't waste time with null pointers.
+     */
     if(!d || !type)
         return 0;
+
+    /*
+     * Allocate the node structure.
+     */
     struct node_s *n = (struct node_s *) malloc(sizeof(struct node_s));
     if(!n)
         return 0;
 
-    n->type = type;
-    n->owner = 0;
-    n->table = 0;
-    n->id = 0;
-    n->len = 0;
-    n->max = max;
-
+    /*
+     * Create the correct data structure and populate it using
+     * the initial data provided.
+     */
     if(!(n->data = type->new(d))) {
         free(n);
         return 0;
     }
 
-    if(n->max &&
-    !(n->table = (struct node_s **) malloc(sizeof(struct node_s *) * max))) {
-        type->freev(n->data);
-        free(n);
-        return 0;
-    }
+    /*
+     * Initialize the node structure.
+     */
+    n->type = type;
+    n->owner = 0;
+    n->table = 0;
+    n->id = 0;
+    n->len = 0;
+    n->max = 0;
 
     return n;
+}
+
+/*
+ * Use this function instead of calling a node's diff directly.
+ * We can quickly determine equality or inequality based on pointer,
+ * and node type.
+ */
+int node_diff(const void *a, const void *b)
+{
+    /*
+     * Two null pointers will be considered equal.
+     */
+    if(a == b)
+        return 0;
+
+    /*
+     * If only one pointer is null, or the nodes are of different type
+     * return a standard diff.
+     */
+    if((!a || !b) || (node_get_type(a) != node_get_type(b)))
+        return NODE_TYPE_DIFF;
+
+    return node_get_diff(a)(node_data(a), node_data(b));
 }
 
 /*
@@ -124,20 +293,22 @@ struct node_s *node_new(const struct node_type_s *type, const void *d,
  */
 size_t node_put(struct node_s *n, size_t index, struct node_s *c)
 {
-    if(!n || !c || (c->owner == n))
+    /*
+     * Make sure the table has enough room.
+     */
+    if( !n || !c || (c->owner == n) ||
+        (index >= n->max && !node_resize_table(n, (index ? index : 1) << 1)))
         return 0;
 
-    if(index >= n->max && !node_resize_table(n, (index ? index : 1) << 1))
-        return 0;
-
+    /*
+     * Clear all pointers leading up from the previous set element.
+     */
     if(index >= n->len) {
-        memset(n->table + n->len, 0, (index - n->len) * sizeof(struct node_s *));
+        node_clear_table(n, n->len, index - n->len);
         n->len = index + 1;
     }
 
-    n->table[index] = c;
-    c->owner = n;
-    c->id = index;
+    node_adopt(n, c, index);
 
     return n->len;
 }
@@ -161,25 +332,37 @@ size_t node_put(struct node_s *n, size_t index, struct node_s *c)
  */
 struct node_s *node_release(struct node_s *n, size_t index)
 {
+    /*
+     * Lookup the data. node_at will do bounds and sanity checks.
+     */
     struct node_s *ret = node_at(n, index);
-    if(!ret)
-        return 0;
 
-    n->table[index] = 0;
+    /*
+     * Only emancipate if we have something.
+     */
+    if(ret)
+        node_emancipate(ret);
 
-    if(index == (n->len - 1)) {
-        // Rewind to where there is an element
-        while(n->len && !n->table[--n->len])
-            ;
-
-        // Resize the array accordingly
-        if(!n->len)
-            node_free_table(n);
-        else if(n->len < (n->max >> 2))
-            node_resize_table(n, n->len << 1);
-    }
-
-    ret->owner = 0;
-    ret->id = 0;
+    /*
+     * Return either the emancipated node, or nothing if a node
+     * was not present.
+     */
     return ret;
 }
+
+/*
+ * Define the node_type_s structure that will be used to create
+ * nested nodes (nodes with other nodes as their data).
+ */
+static const struct node_type_s _type_node = {
+    .size = sizeof(struct node_s),
+    .freev = _node_free,
+    .new = _node_new,
+    .diff = node_diff
+};
+
+/*
+ * Create a const pointer to the above structure which can then
+ * be passed to the node_new function.
+ */
+const struct node_type_s *node_type = &_type_node;

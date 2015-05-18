@@ -43,7 +43,7 @@ struct node_s *str_node = str_node_new("Hello");
 /* becomes this */
 struct node_s *str_node =
     node_new(node_type_str,
-        &(struct str_s) {.buf = "Hello", .len = strlen("Hello")}, 0, 0);
+        &(struct str_s) {.buf = "Hello", .len = strlen("Hello")});
 ```
 
 ### API
@@ -51,8 +51,7 @@ struct node_s *str_node =
 ##### node
 **Create**:
 ```c
-struct node_s *node_new(const struct node_type_s *type, const void *d,
-    struct node_s *owner, size_t max);
+struct node_s *node_new(const struct node_type_s *type, const void *d);
 ```
 See the expansion of str_node_new and str_init above for a description on how this functions is used.
 
