@@ -5,13 +5,12 @@ int main(int argc, char const *argv[])
 {
     unsigned i;
     struct node_s *head = str_node_new("aaa"), *next = head;
-
     fail(!head, "couldn't create head node");
 
     for(i = 1; i <= TEST_ROUNDS; i++) {
         struct node_s   *sn1 = str_node_new("Hello"),
                         *sn2 = str_node_new("World"),
-                        *n1 = node_node_new(sn1);
+                        *n1 = nested_node_new(sn1, 0);
 
         fail(!sn1, "couldn't create first node");
         fail(!sn2, "couldn't create second node");

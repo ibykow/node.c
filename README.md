@@ -40,6 +40,7 @@ The expansion of the ```str_node_new``` and ```str_init``` macros illustrates ho
 ```c
 /* This call */
 struct node_s *str_node = str_node_new("Hello");
+
 /* becomes this */
 struct node_s *str_node =
     node_new(node_type_str,

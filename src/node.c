@@ -30,32 +30,58 @@
     memset((n)->table + (from), 0, (to) * sizeof(struct node_s *))
 
 /*
- * Used by *node_type
+ * Frees nested nodes.
  */
-static void _node_free(void *data)
+static void nested_node_free(void *data)
 {
     if(!data)
         return;
 
     /*
-     * Re-use the existing destructor
+     * Recurse as necessary.
      */
-    node_free((struct node_s *) data);
-}
+    if(nested_node_freeit(data))
+        node_free(nested_node_node(data));
 
-/*
- * Used by *node_type
- */
-static void *_node_new(const void *init)
-{
     /*
-     * node_copy must check whether init exists
+     * Free the nested_node_s structure which was allocated
+     * in _nested_node_new.
      */
-    return (void *) node_copy(node_get(init));
+    free(data);
 }
 
 /*
- * Frees all child elements
+ * Referenced by nested_node_type.
+ */
+static void *_nested_node_new(const void *init)
+{
+    if(!init)
+        return 0;
+
+    struct nested_node_s *nn = (struct nested_node_s *)
+        malloc(sizeof(struct nested_node_s));
+
+    if(!nn)
+        return 0;
+
+    nn->node = (void *) nested_node_node(init);
+    nn->freeit = nested_node_freeit(init);
+
+    return (void *) nn;
+}
+
+/*
+ * nested_node_diff must exist as a function because it is referenced
+ * by nested_node_type.
+ */
+static int nested_node_diff(const void *a, const void *b)
+{
+    return node_diff((struct node_s *) nested_node_node(a),
+                    (struct node_s *) nested_node_node(b));
+}
+
+/*
+ * Frees all child elements.
  */
 static void node_free_table(struct node_s *n)
 {
@@ -70,7 +96,7 @@ static void node_free_table(struct node_s *n)
 }
 
 /*
- * Either shrinks or grows the table
+ * Either shrinks or grows the table.
  */
 static size_t node_resize_table(struct node_s *n, size_t size)
 {
@@ -91,18 +117,18 @@ static size_t node_resize_table(struct node_s *n, size_t size)
 
 /*
  * Check to see if the table needs shrinking
- * and shrink accordingly
+ * and shrink accordingly.
  */
 static size_t node_tighten_table(struct node_s *n)
 {
     /*
-     * If n->max is 0 we cannot tighten any further
+     * If n->max is 0 we cannot tighten any further.
      */
     if(!n->max)
         return 0;
 
     /*
-     * Rewind back to the previous available element
+     * Rewind back to the previous available element.
      */
     for(; n->len && !n->table[n->len - 1]; n->len--)
         ;
@@ -199,7 +225,8 @@ void node_free(struct node_s *n)
 
     /*
      * Finally, we free our own data, the pointer to it, and ourselves.
-     * We know how to free the data with the use of its type.
+     * The 'freev' function provided by the type must handle freeing all
+     * its data internals up to and including n->data itself as it sees fit.
      */
     n->type->freev(n->data);
     n->data = 0;
@@ -207,7 +234,7 @@ void node_free(struct node_s *n)
 }
 
 /*
- * Create a new node given a type and a const representation of the data.
+ * Create a new node given its type and a const representation of its data.
  */
 struct node_s *node_new(const struct node_type_s *type, const void *d)
 {
@@ -251,7 +278,7 @@ struct node_s *node_new(const struct node_type_s *type, const void *d)
  * We can quickly determine equality or inequality based on pointer,
  * and node type.
  */
-int node_diff(const void *a, const void *b)
+int node_diff(const struct node_s *a, const struct node_s *b)
 {
     /*
      * Two null pointers will be considered equal.
@@ -263,10 +290,10 @@ int node_diff(const void *a, const void *b)
      * If only one pointer is null, or the nodes are of different type
      * return a standard diff.
      */
-    if((!a || !b) || (node_get_type(a) != node_get_type(b)))
+    if((!a || !b) || (a->type != b->type))
         return NODE_TYPE_DIFF;
 
-    return node_get_diff(a)(node_data(a), node_data(b));
+    return a->type->diff(a->data, b->data);
 }
 
 /*
@@ -354,15 +381,15 @@ struct node_s *node_release(struct node_s *n, size_t index)
  * Define the node_type_s structure that will be used to create
  * nested nodes (nodes with other nodes as their data).
  */
-static const struct node_type_s _type_node = {
-    .size = sizeof(struct node_s),
-    .freev = _node_free,
-    .new = _node_new,
-    .diff = node_diff
+static const struct node_type_s _nested_node_type = {
+    .size = sizeof(struct nested_node_s),
+    .freev = nested_node_free,
+    .new = _nested_node_new,
+    .diff = nested_node_diff
 };
 
 /*
  * Create a const pointer to the above structure which can then
  * be passed to the node_new function.
  */
-const struct node_type_s *node_type = &_type_node;
+const struct node_type_s *nested_node_type = &_nested_node_type;

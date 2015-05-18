@@ -16,16 +16,17 @@
 
 #define NODE_TYPE_DIFF (-1)
 
-#define node_node_new(n) node_new(node_type, n)
+#define nested_node_new(n, freeit) node_new(nested_node_type, \
+    &(struct nested_node_s) {n, freeit})
 
 /*
- * Helper macros for accessing node members.
+ * Helper macros for accessing nested node members.
  */
-#define node_get(d) ((struct node_s *) d)
-#define node_member(d, member) node_get(d)->member
-#define node_data(d) node_member(d, data)
-#define node_get_type(d) node_member(d, type)
-#define node_get_diff(d) node_member(d, type)->diff
+#define nested_node_get(d) ((struct nested_node_s *) d)
+#define nested_node_member(d, member) nested_node_get(d)->member
+#define nested_node_node(d) nested_node_member(d, node)
+#define nested_node_freeit(d) nested_node_member(d, freeit)
+
 
 /*
  * Basic, shallow copy. This will recrusively copy and nodes
@@ -63,9 +64,7 @@ struct node_type_s {
 };
 
 /*
- * This is the basic node data structure. Note that the data pointer is
- * situated at the top of the structure for immediate access if it is to
- * be nested in another structure.
+ * The basic node data structure.
  */
 struct node_s {
     void *data;
@@ -75,16 +74,27 @@ struct node_s {
 };
 
 /*
- * The const node_type_s declaration used for creating nodes which have
- * other nodes as their "data".
+ * The data structure representing nested nodes.
+ * All nested nodes must be provided with a previously created node and
+ * told whether you want those nodes freed along with the nested node.
+ * This way we can avoid constantly making copies.
  */
-const struct node_type_s *node_type;
+struct nested_node_s {
+    struct node_s *node;
+    unsigned freeit;
+};
+
+/*
+ * Used for creating nodes which have other nodes as their "data".
+ */
+extern const struct node_type_s *nested_node_type;
 
 /*
  * functions
  */
 void node_free(struct node_s *);
 struct node_s *node_new(const struct node_type_s *type, const void *d);
+int node_diff(const struct node_s *a, const struct node_s *b);
 size_t node_put(struct node_s *, size_t, struct node_s *);
 struct node_s *node_release(struct node_s *, size_t);
 
