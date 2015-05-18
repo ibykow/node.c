@@ -11,7 +11,7 @@
 #define str_node_len(n) str_len(n->data)
 #define str_node_buf(n) str_buf(n->data)
 
-#define str_init(s, l) &(struct str_s) {.buf = s, .len = l}
+#define str_init(s, l) &(const struct str_s) {.buf = s, .len = l}
 #define str_node_new(s) node_new(node_type_str, str_init(s, strlen(s)))
 
 struct str_s {

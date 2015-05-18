@@ -37,11 +37,12 @@ static void nested_node_free(void *data)
     if(!data)
         return;
 
+    pr_dbg("%p", data);
     /*
      * Recurse as necessary.
      */
     if(nested_node_freeit(data))
-        node_free(nested_node_node(data));
+        node_free(nested_node_node(data), true);
 
     /*
      * Free the nested_node_s structure which was allocated
@@ -83,11 +84,12 @@ static int nested_node_diff(const void *a, const void *b)
 /*
  * Frees all child elements.
  */
-static void node_free_table(struct node_s *n)
+static void node_free_table(struct node_s *n, bool recurse)
 {
     while(n->len)
-        node_free(n->table[--n->len]);
+        node_free(n->table[--n->len], recurse);
 
+    pr_dbg("%p (%p)", n->table, n);
     free(n->table);
 
     n->table = 0;
@@ -119,14 +121,13 @@ static size_t node_resize_table(struct node_s *n, size_t size)
  * Check to see if the table needs shrinking
  * and shrink accordingly.
  */
-static size_t node_tighten_table(struct node_s *n)
+static size_t node_tighten_table(struct node_s *n, bool recurse)
 {
     /*
      * If n->max is 0 we cannot tighten any further.
      */
     if(!n->max)
         return 0;
-
     /*
      * Rewind back to the previous available element.
      */
@@ -138,9 +139,9 @@ static size_t node_tighten_table(struct node_s *n)
      * shrink the table by half.
      */
     if(!n->len)
-        node_free_table(n);
+        node_free_table(n, recurse);
     else if(n->len < (n->max >> 2))
-        node_resize_table(n, n->len << 1);
+        node_resize_table(n, n->len >> 1);
 
     return n->max;
 }
@@ -162,13 +163,13 @@ static void node_emancipate(struct node_s *n)
      * Remove ourselves from the owner's table *before* we
      * attempt to tighten it.
      */
-    n->owner->table[n->id] = 0;
 
+    n->owner->table[n->id] = 0;
     /*
      * Run the tightening operation because we may have cleared
      * up enough room in the owner's table for it to be worth it.
      */
-    node_tighten_table(n->owner);
+    node_tighten_table(n->owner, true);
 
     /*
      * Forget the owner and clear our id.
@@ -203,20 +204,21 @@ static struct node_s *node_adopt(struct node_s *n, struct node_s *c, size_t inde
  * Free the current node, its value and recursively free
  * all of its children and their values and so on.
  */
-void node_free(struct node_s *n)
+void node_free(struct node_s *n, bool recurse)
 {
     /*
      * Sanity check to make sure there is a node being passed in.
      */
     if(!n)
         return;
+    pr_dbg("%p (%c)", n, recurse ? 'T' : 'F');
 
     /*
      * After this, all the children along with the table itself
      * will have been freed.
      */
-    if(n->table)
-        node_free_table(n);
+    if(recurse && n->table)
+        node_free_table(n, recurse);
 
     /*
      * Remove ourselves from any owner nodes.
@@ -321,17 +323,36 @@ int node_diff(const struct node_s *a, const struct node_s *b)
 size_t node_put(struct node_s *n, size_t index, struct node_s *c)
 {
     /*
-     * Make sure the table has enough room.
+     * Sanitize. The node's table acts as a set, so we make sure
+     * that we're not re-entering the same element twice.
      */
-    if( !n || !c || (c->owner == n) ||
-        (index >= n->max && !node_resize_table(n, (index ? index : 1) << 1)))
+    if(!n || !c || (c->owner == n))
         return 0;
+    pr_dbg("n: %p, c: %p", n, c);
+    /*
+     * Clear away any previous child elements.
+     */
+    if(node_at(n, index))
+        node_emancipate(node_at(n, index));
 
     /*
-     * Clear all pointers leading up from the previous set element.
+     * Make room for the new element as necessary.
      */
+    if((index >= n->max) &&
+        !node_resize_table(n, (index ? index : 1) << 1))
+        return 0;
+
     if(index >= n->len) {
+        /*
+         * Clear all pointers leading up from the previously
+         * set element.
+         */
         node_clear_table(n, n->len, index - n->len);
+
+        /*
+         * Update the length only if the item we've inserted
+         * is beyond the previous array length.
+         */
         n->len = index + 1;
     }
 
@@ -345,27 +366,31 @@ size_t node_put(struct node_s *n, size_t index, struct node_s *c)
  *  Release and return a child node from a parent.
  *
  * inputs:
- *  struct node_s *n - a pointer to the node containing the child element you
- *  want released size_t index - the index of the child node within the parent
- *  nodes table.
+ *  struct node_s *n - a pointer to the node containing the child
+ *  element you want released size_t index - the index of the child
+ *  node within the parent nodes table.
  *
  * output:
- *  struct node_s * - a pointer to the child node if one exists, or 0 otherwise
+ *  struct node_s * - a pointer to the child node if one exists.
+ *  Otherwise, return 0.
  *
  * notes:
  *  - This function shrinks the parent node's table as necessary.
- *  - If you have a node pointer c belonging to another node n you can look up
- *      c's index in n's table by using c->id
+ *  - If you have a node pointer c belonging to another node n you
+ *      can look up c's index in n's table with 'c->id'.
  */
 struct node_s *node_release(struct node_s *n, size_t index)
 {
+
     /*
-     * Lookup the data. node_at will do bounds and sanity checks.
+     * Look-up the data.
      */
     struct node_s *ret = node_at(n, index);
 
     /*
-     * Only emancipate if we have something.
+     * The 'node_at' macro has done bounds and sanity checks for us,
+     * so all we have to do is make sure we've received something
+     * back from it.
      */
     if(ret)
         node_emancipate(ret);

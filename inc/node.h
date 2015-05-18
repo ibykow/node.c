@@ -17,7 +17,11 @@
 #define NODE_TYPE_DIFF (-1)
 
 #define nested_node_new(n, freeit) node_new(nested_node_type, \
-    &(struct nested_node_s) {n, freeit})
+    &(const struct nested_node_s) {n, freeit})
+
+#define nested_node_new_const(n) nested_node_new(n, false)
+#define nested_node_new_dynamic(n) nested_node_new(n, true)
+#define is_nested_node(n) (n && ((n)->type == nested_node_type))
 
 /*
  * Helper macros for accessing nested node members.
@@ -42,7 +46,7 @@
 /*
  * Check what's at index i in n's table.
  */
-#define node_at(n, i) (n && (n->len > index) ? n->table[i] : 0)
+#define node_at(n, i) ((n && (n->len > i)) ? n->table[i] : 0)
 
 /*
  * data structures
@@ -81,7 +85,7 @@ struct node_s {
  */
 struct nested_node_s {
     struct node_s *node;
-    unsigned freeit;
+    bool freeit;
 };
 
 /*
@@ -92,7 +96,7 @@ extern const struct node_type_s *nested_node_type;
 /*
  * functions
  */
-void node_free(struct node_s *);
+void node_free(struct node_s *, bool);
 struct node_s *node_new(const struct node_type_s *type, const void *d);
 int node_diff(const struct node_s *a, const struct node_s *b);
 size_t node_put(struct node_s *, size_t, struct node_s *);

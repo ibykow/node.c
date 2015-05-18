@@ -3,8 +3,10 @@
 
 int main(int argc, char const *argv[])
 {
+    pr_dbg("start");
     unsigned i;
-    struct node_s *head = str_node_new("aaa"), *next = head;
+    struct node_s   *head = str_node_new("aaa"), *next = head,
+                    *stack = 0, *q = 0;
     fail(!head, "couldn't create head node");
 
     for(i = 1; i <= TEST_ROUNDS; i++) {
@@ -24,12 +26,19 @@ int main(int argc, char const *argv[])
         fail(node_put(sn1, 0, sn2), "inserted same item into set");
         fail(node_put(sn1, 10, sn2), "inserted same item into set");
         // printf("%s\n", str_node_buf(sn1));
-        node_free(sn1);
-        node_free(n1);
+        node_free(sn1, true);
+        node_free(n1, true);
 
         node_add(next, str_node_new("aaa"));
         fail(!next->len, "couldn't add to linked list");
-        next = next->table[0];
+        // next = next->table[0];
+        next = node_at(next, 0);
+
+        stack_push(&stack, str_node_new("bbb"));
+        fail(!stack, "couldn't push item onto the stack");
+
+        q_en(&q, str_node_new("qqq"));
+        fail(!is_nested_node(q), "couldn't enqueue an item");
     }
 
     for(i = 0, next = head; (next = next->table ? next->table[0] : 0); i++) {
@@ -38,7 +47,17 @@ int main(int argc, char const *argv[])
     }
 
     fail(i != TEST_ROUNDS, "linked list is too short");
-    node_free(head);
+    node_free(head, true);
+
+    for(i = 0; (next = stack_pop(&stack)); i++)
+        node_free(next, true);
+    fail(i != TEST_ROUNDS, "stack was too short");
+
+    for(i = 0; (next = q_de(&q)); i++) {
+        // printf("%s\n", str_node_buf(next));
+        node_free(next, false);
+    }
+    fail(i != TEST_ROUNDS, "queue was too short");
 
     printf("All test rounds passed!\n");
     return 0;

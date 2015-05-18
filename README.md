@@ -58,7 +58,7 @@ See the expansion of str_node_new and str_init above for a description on how th
 
 **Destroy**:
 ```c
-void node_free(struct node_s *n);
+void node_free(struct node_s *n, bool recurse);
 ```  
 Recursively frees all data associated with the node and its children (and children's children, etc).
 
