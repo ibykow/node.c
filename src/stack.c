@@ -58,22 +58,24 @@
 void stack_push(struct node_s **stack, const struct node_s *n)
 {
     /*
-     * Sanitize. The stack itself must be a nested node type.
+     * Sanitize.
      */
-    if(!stack || !n || (*stack && !is_nested_node(*stack)))
+    if(!stack || !n)
         return;
 
     /*
      * Create a nested stack node around the node we want
      * to insert.
      */
-    struct node_s *next = nested_node_new_const((struct node_s *) n);
+    struct node_s *next = node_new_node_const(n);
     pr_dbg("*stack: %p, n: %p, next: %p", *stack, n, next);
+
     /*
      * Make sure the allocation went smoothly.
      */
     if(!next)
         return;
+
     /*
      * If the stack isn't empty, push it down.
      */
@@ -115,9 +117,9 @@ struct node_s *stack_pop(struct node_s **stack)
 {
 
     /*
-     * Sanitize. Make sure we're dealing with a nested stack node.
+     * Sanitize.
      */
-    if(!stack || !*stack || !is_nested_node(*stack))
+    if(!stack || !*stack)
         return 0;
 
     /*
@@ -125,7 +127,7 @@ struct node_s *stack_pop(struct node_s **stack)
      * from the current one.
      */
     struct node_s *next = node_release(*stack, STACK_INDEX),
-                    *n = nested_node_node((*stack)->data);
+                    *n = node_data(*stack);
 
     /*
      * Free the, now empty, head of the stack.
@@ -152,11 +154,12 @@ struct node_s *stack_pop(struct node_s **stack)
  */
 struct node_s *stack_deq(struct node_s **q)
 {
-    if(!q || !*q || !is_nested_node(*q))
+    if(!q || !*q)
         return 0;
 
     struct node_s *n;
     pr_dbg("*q: %p, (*q)->type: %p", *q, (*q)->type);
+
     /*
      * Having an owner means that we have two or more items left in the queue.
      */
@@ -193,7 +196,7 @@ struct node_s *stack_deq(struct node_s **q)
         /*
          * Get the data we want to return.
          */
-        n = nested_node_node(current->data);
+        n = node_data(current);
         pr_dbg("*q: %p, current: %p, prev: %p, n: %p, current->owner: %p, (*q)->owner: %p",
             *q, current, prev, n, current->owner, prev->owner);
 
@@ -213,7 +216,7 @@ struct node_s *stack_deq(struct node_s **q)
         /*
          * Hold on to the data.
          */
-        n = nested_node_node((*q)->data);
+        n = node_data(*q);
         pr_dbg("*q: %p, n: %p - END OF QUEUE.............!", *q, n);
 
         /*
@@ -226,5 +229,6 @@ struct node_s *stack_deq(struct node_s **q)
          */
         *q = 0;
     }
+
     return n;
 }

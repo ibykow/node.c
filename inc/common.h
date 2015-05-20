@@ -34,4 +34,6 @@
 #define pr_dbg(fmt, ...)
 #endif
 
+#define nop() ((void) 0)
+
 #endif

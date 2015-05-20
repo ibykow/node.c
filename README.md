@@ -18,7 +18,7 @@ printf("%s\n", str_node_buf(str_node));
 
 Add a child node:
 ```c
-node_add(str_node, str_node_new("World"));
+node_push(str_node, str_node_new("World"));
 ```
 
 Print out the child node string:

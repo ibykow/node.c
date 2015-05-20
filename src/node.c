@@ -19,75 +19,45 @@
 #include "common.h"
 
 /*
- * Macros
+ * macros
  */
 #define node_table_full(n) (n->len == n->max)
 
 /*
- * Clear a certain range of the node's table
+ * node_clear_table
+ * Clears a certain range of the node's table
  */
 #define node_clear_table(n, from, to) \
     memset((n)->table + (from), 0, (to) * sizeof(struct node_s *))
 
 /*
- * Frees nested nodes.
+ * static functions
  */
-static void nested_node_free(void *data)
+
+static void _node_free(void *d)
 {
-    if(!data)
-        return;
+    node_free((struct node_s *) d, true);
+}
 
-    pr_dbg("%p", data);
-    /*
-     * Recurse as necessary.
-     */
-    if(nested_node_freeit(data))
-        node_free(nested_node_node(data), true);
+static void *_node_new(const void *d)
+{
+    return (void *) d;
+}
 
-    /*
-     * Free the nested_node_s structure which was allocated
-     * in _nested_node_new.
-     */
-    free(data);
+static int _node_diff(const void *a, const void *b)
+{
+    return node_diff((struct node_s *) a, (struct node_s *) b);
 }
 
 /*
- * Referenced by nested_node_type.
- */
-static void *_nested_node_new(const void *init)
-{
-    if(!init)
-        return 0;
-
-    struct nested_node_s *nn = (struct nested_node_s *)
-        malloc(sizeof(struct nested_node_s));
-
-    if(!nn)
-        return 0;
-
-    nn->node = (void *) nested_node_node(init);
-    nn->freeit = nested_node_freeit(init);
-
-    return (void *) nn;
-}
-
-/*
- * nested_node_diff must exist as a function because it is referenced
- * by nested_node_type.
- */
-static int nested_node_diff(const void *a, const void *b)
-{
-    return node_diff((struct node_s *) nested_node_node(a),
-                    (struct node_s *) nested_node_node(b));
-}
-
-/*
+ * static void node_free_table(struct node_s *n, bool recurse);
  * Frees all child elements.
  */
 static void node_free_table(struct node_s *n, bool recurse)
 {
-    while(n->len)
-        node_free(n->table[--n->len], recurse);
+    unsigned i;
+    for(i = 0; i < n->len; i++)
+        node_free(n->table[i], recurse);
 
     pr_dbg("%p (%p)", n->table, n);
     free(n->table);
@@ -98,18 +68,23 @@ static void node_free_table(struct node_s *n, bool recurse)
 }
 
 /*
- * Either shrinks or grows the table.
+ * static size_t node_resize_table(struct node_s *n, size_t size)
+ * Resize the table to size greater than 0. If we want to resize
+ * the table to 0, we use node_free_table instead.
  */
 static size_t node_resize_table(struct node_s *n, size_t size)
 {
     if(!n || !size)
         return 0;
 
+    pr_dbg("n: %p, n->table: %p, size: %u", n, n->table, size);
+
     struct node_s **new_table = (struct node_s **)
         realloc(n->table, sizeof(struct node_s *) * size);
-
     if(!new_table)
         return 0;
+
+    pr_dbg("n->table: %p, new_table: %p", n->table, new_table);
 
     n->table = new_table;
     n->max = size;
@@ -118,8 +93,8 @@ static size_t node_resize_table(struct node_s *n, size_t size)
 }
 
 /*
- * Check to see if the table needs shrinking
- * and shrink accordingly.
+ * static size_t node_tighten_table(struct node_s *n, bool recurse);
+ * Shrink the table if necessary.
  */
 static size_t node_tighten_table(struct node_s *n, bool recurse)
 {
@@ -128,6 +103,7 @@ static size_t node_tighten_table(struct node_s *n, bool recurse)
      */
     if(!n->max)
         return 0;
+        
     /*
      * Rewind back to the previous available element.
      */
@@ -141,20 +117,20 @@ static size_t node_tighten_table(struct node_s *n, bool recurse)
     if(!n->len)
         node_free_table(n, recurse);
     else if(n->len < (n->max >> 2))
-        node_resize_table(n, n->len >> 1);
+        node_resize_table(n, n->max >> 1);
 
     return n->max;
 }
 
 /*
  * Remove the node from its owner's table if an owner exists.
- * If an owner does exist, assume that it is a valid node
- * and that it remembers us (ie. that its table has a record of us).
+ * Assume that value stored at n->owner is a valid node pointer and
+ * that the owner node remembers us (ie. that its table has a record of us).
  */
 static void node_emancipate(struct node_s *n)
 {
     /*
-     * If we don't belong to anyone, there's nothing to do.
+     * If we don't belong to anyone, there's nothing for us to do here.
      */
     if(!n->owner)
         return;
@@ -163,8 +139,8 @@ static void node_emancipate(struct node_s *n)
      * Remove ourselves from the owner's table *before* we
      * attempt to tighten it.
      */
-
     n->owner->table[n->id] = 0;
+
     /*
      * Run the tightening operation because we may have cleared
      * up enough room in the owner's table for it to be worth it.
@@ -201,6 +177,14 @@ static struct node_s *node_adopt(struct node_s *n, struct node_s *c, size_t inde
 }
 
 /*
+ * static and external variable declarations
+ */
+
+/*
+ * non-static functions
+ */
+
+/*
  * Free the current node, its value and recursively free
  * all of its children and their values and so on.
  */
@@ -226,11 +210,18 @@ void node_free(struct node_s *n, bool recurse)
     node_emancipate(n);
 
     /*
-     * Finally, we free our own data, the pointer to it, and ourselves.
-     * The 'freev' function provided by the type must handle freeing all
-     * its data internals up to and including n->data itself as it sees fit.
+     * Check if it's our responsibility to free the data.
      */
-    n->type->freev(n->data);
+    if(n->frees_data)
+        /*
+         * The 'freev' function provided by the type must handle freeing all
+         * its data internals up to and including n->data itself as it sees fit.
+         */
+        n->type->freev(n->data);
+
+    /*
+     * Free the node itself.
+     */
     n->data = 0;
     free(n);
 }
@@ -238,8 +229,9 @@ void node_free(struct node_s *n, bool recurse)
 /*
  * Create a new node given its type and a const representation of its data.
  */
-struct node_s *node_new(const struct node_type_s *type, const void *d)
+struct node_s *node_new(const struct node_type_s *type, const void *d, bool fsd)
 {
+    pr_dbg("type: %p, d: %p, node_type_node: %p", type, d, node_type_node);
     /*
      * Sanitize the input, so we don't waste time with null pointers.
      */
@@ -266,12 +258,14 @@ struct node_s *node_new(const struct node_type_s *type, const void *d)
      * Initialize the node structure.
      */
     n->type = type;
+    n->frees_data = fsd;
     n->owner = 0;
     n->table = 0;
     n->id = 0;
     n->len = 0;
     n->max = 0;
 
+    pr_dbg("n: %p, data: %p", n, n->data);
     return n;
 }
 
@@ -322,13 +316,14 @@ int node_diff(const struct node_s *a, const struct node_s *b)
  */
 size_t node_put(struct node_s *n, size_t index, struct node_s *c)
 {
+    pr_dbg("n: %p, c: %p", n, c);
+
     /*
      * Sanitize. The node's table acts as a set, so we make sure
      * that we're not re-entering the same element twice.
      */
     if(!n || !c || (c->owner == n))
         return 0;
-    pr_dbg("n: %p, c: %p", n, c);
     /*
      * Clear away any previous child elements.
      */
@@ -381,7 +376,6 @@ size_t node_put(struct node_s *n, size_t index, struct node_s *c)
  */
 struct node_s *node_release(struct node_s *n, size_t index)
 {
-
     /*
      * Look-up the data.
      */
@@ -403,18 +397,13 @@ struct node_s *node_release(struct node_s *n, size_t index)
 }
 
 /*
- * Define the node_type_s structure that will be used to create
- * nested nodes (nodes with other nodes as their data).
+ * The node type
  */
-static const struct node_type_s _nested_node_type = {
-    .size = sizeof(struct nested_node_s),
-    .freev = nested_node_free,
-    .new = _nested_node_new,
-    .diff = nested_node_diff
+struct node_type_s _type_node = {
+    .size = sizeof(struct node_s),
+    .freev = _node_free,
+    .new = _node_new,
+    .diff = _node_diff
 };
 
-/*
- * Create a const pointer to the above structure which can then
- * be passed to the node_new function.
- */
-const struct node_type_s *nested_node_type = &_nested_node_type;
+const struct node_type_s *node_type_node = &_type_node;
