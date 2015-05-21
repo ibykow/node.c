@@ -1,3 +1,4 @@
+// #define PR_DEBUG
 #include "common.h"
 #include "test.h"
 
@@ -95,6 +96,28 @@ test_func(table)
     node_free_all(t);
 }
 
+test_func(list)
+{
+    size_t i;
+    struct node_s *head = str_node_new("aaa"), *next = head;
+    test_fail(!head, "couldn't create head node");
+
+    for(i = 0; i < TEST_ROUNDS; i++) {
+        node_push(next, str_node_new("aaa"));
+        next = node_at(next, 0);
+        test_break(!next, "couldn't add item %lu", i);
+    }
+
+    for(i = 0, next = head; (next = node_at(next, 0)); i++) {
+        test_break(!next, "couldn't remove item %lu", i);
+        test_try(!next->owner, "owner %lu was not set", i);
+        test_try(next->type->diff(next->data, next->owner->data),
+            "diff %lu not working", i);
+    }
+
+    node_free_all(head);
+}
+
 test_func(stack)
 {
     size_t i;
@@ -120,7 +143,7 @@ test_func(queue)
 
     for(i = 0; i < TEST_ROUNDS; i++) {
         q_en(&q, str_node_new("qqq"));
-        test_try(!q, "couldn't enqueue %lu item", i);
+        test_try(!q, "couldn't enqueue item %lu", i);
     }
 
     for(i = 0; (next = q_de(&q)); i++) {
@@ -128,29 +151,9 @@ test_func(queue)
         node_free_all(next);
     }
 
+    test_try(i != TEST_ROUNDS, "expected %d items. Had %lu", TEST_ROUNDS, i);
+
     test_try(q, "queue shouldn't exist");
-}
-
-test_func(list)
-{
-    size_t i;
-    struct node_s *head = str_node_new("aaa"), *next = head;
-    test_fail(!head, "couldn't create head node");
-
-    for(i = 0; i < TEST_ROUNDS; i++) {
-        node_push(next, str_node_new("aaa"));
-        next = node_at(next, 0);
-        test_break(!next, "couldn't add item %lu", i);
-    }
-
-    for(i = 0, next = head; (next = node_at(next, 0)); i++) {
-        test_break(!next, "couldn't remove item %lu", i);
-        test_try(!next->owner, "owner %lu was not set", i);
-        test_try(next->type->diff(next->data, next->owner->data),
-            "diff %lu not working", i);
-    }
-
-    node_free_all(head);
 }
 
 test_func(graph)
@@ -166,17 +169,47 @@ test_func(graph)
     node_free_all(g);
 }
 
+static int prev_int;
+static bool fail_flag;
+
+static void confirm_ascended(struct node_s *n)
+{
+    if(int_node_n(n) < prev_int)
+        fail_flag = true;
+
+    pr_dbg("%d %s %d", int_node_n(n), int_node_n(n) < prev_int ? "<" : ">=", prev_int);
+    prev_int = int_node_n(n);
+}
+
 test_func(btree)
 {
-    struct node_s *t = str_node_new("btree root");
+    const unsigned num_nodes = 200;
+    struct node_s *t = int_node_new(num_nodes >> 1);
     test_fail(!t, "couldn't create root node");
+    pr_dbg("Created root node %d", int_node_n(t));
+
+    unsigned i;
+
+    for(i = 0; i < num_nodes; i++) {
+        struct node_s *n = int_node_new(ur(num_nodes));
+        test_try(!n, "could create node %u", i);
+        test_try(!node_bst_insert(t, n), "couldn't insert node %u (%d)",
+            i, int_node_n(n));
+
+        pr_dbg("Added node %u: %d", i, int_node_n(n));
+    }
+
+    prev_int = -1; fail_flag = false;
+    node_in_order(t, confirm_ascended);
+    test_try(fail_flag, "btree is out of order");
 
     node_free_all(t);
 }
 
 int main(int argc, char const *argv[])
 {
-    struct test_result_s global_tr = test_result_new("Global");
+    init_random();
+    struct test_result_s global_tr = test_result_new("global");
     unsigned i;
 
     printf("Running %s tests\n", global_tr.name);

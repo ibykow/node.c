@@ -8,7 +8,7 @@
 
 #include "common.h"
 
-#define STACK_INDEX 0
+#define STACK_INDEX NODE_NEXT
 
 /*
  * void stack_push(struct node_s **stack, const struct node_s *n);

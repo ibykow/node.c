@@ -1,7 +1,7 @@
 #ifndef _TEST_H_
 #define _TEST_H_
 
-#define TEST_ROUNDS 1
+#define TEST_ROUNDS 10
 // #define PR_DEBUG
 
 char *new_str(const char str[], unsigned len);

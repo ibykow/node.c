@@ -10,12 +10,22 @@
 
 #include <stdlib.h>
 #include <stdbool.h>
+#include "str.h"
+
+enum node_order_e {
+    NODE_PRE_ORDER,
+    NODE_IN_ORDER,
+    NODE_POST_ORDER
+};
+
+#define NODE_TYPE_DIFF (-1)
+#define NODE_NEXT   0
+#define NODE_LEFT   0
+#define NODE_RIGHT  1
 
 /*
  * macros
  */
-
-#define NODE_TYPE_DIFF (-1)
 
 /*
  * Basic, shallow copy. This will recrusively copy and nodes
@@ -47,6 +57,10 @@
 
 #define node_data(n) ((struct node_s *) (n)->data)
 
+#define node_pre_order(n, it) node_bt_for_each(n, it, NODE_PRE_ORDER)
+#define node_in_order(n, it) node_bt_for_each(n, it, NODE_IN_ORDER)
+#define node_post_order(n, it) node_bt_for_each(n, it, NODE_POST_ORDER)
+
 /*
  * data structures
  */
@@ -64,6 +78,8 @@ extern const struct node_type_s {
     void (*freev)(void *),
         *(*new)(const void *);
     int (*diff)(const void *, const void *);
+    struct node_s *(*to_str)(const void *);
+    const char *name;
 } *node_type_node;
 
 /*
@@ -73,8 +89,8 @@ struct node_s {
     void *data;
     bool frees_data;
     const struct node_type_s *type;
-    struct node_s *owner, **table;
-    size_t id, len, max;
+    struct node_s *str, *owner, **table;
+    size_t id, len, max, count;
 };
 
 /*
@@ -91,10 +107,26 @@ struct nested_node_s {
 /*
  * functions
  */
+
 void node_free(struct node_s *, bool);
 struct node_s *node_new(const struct node_type_s *, const void *, bool);
 int node_diff(const struct node_s *a, const struct node_s *b);
+struct node_s *node_to_str(struct node_s *n);
+char *node_string(struct node_s *n);
 size_t node_put(struct node_s *, size_t, struct node_s *);
+int node_bst_insert(struct node_s *a, struct node_s *b);
+void node_bt_for_each(struct node_s *n, void(*iter)(struct node_s *),
+    enum node_order_e o);
 struct node_s *node_release(struct node_s *, size_t);
+
+/*
+ * static inline void node_pr(const struct node_s *n)
+ * Prints out the node as a string. Can be passed to an iterator.
+ */
+static inline void node_pr(struct node_s *n)
+{
+    if(n)
+        printf("%s (%s)\n", node_string(n), n->type->name);
+}
 
 #endif

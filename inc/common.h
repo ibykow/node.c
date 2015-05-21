@@ -12,6 +12,7 @@
 #include <sys/time.h>
 
 #include "fail.h"
+#include "random.h"
 
 #include "node.h"
 #include "str.h"

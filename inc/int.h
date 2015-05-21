@@ -2,7 +2,9 @@
 #define INT_H_
 
 #define int_get(d) ((struct int_s *) d)
-#define int_node_get(n) int_get(n->n)
+#define int_get_n(d) int_get(d)->n 
+#define int_node_get(n) int_get(n->data)
+#define int_node_n(node) int_get(((struct node_s *) node)->data)->n
 
 #define int_init(n) &(const struct int_s) {n}
 

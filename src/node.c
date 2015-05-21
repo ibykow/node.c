@@ -15,7 +15,7 @@
  * See str.c and str.h for an example of how to create a custom node
  * structure and its associated node-type.
  */
-
+// #define PR_DEBUG
 #include "common.h"
 
 /*
@@ -49,6 +49,12 @@ static int _node_diff(const void *a, const void *b)
     return node_diff((struct node_s *) a, (struct node_s *) b);
 }
 
+static struct node_s *to_str(const void *data)
+{
+    // return node_to_str((struct node_s *) data);
+    return 0;
+}
+
 /*
  * static void node_free_table(struct node_s *n, bool recurse);
  * Frees all child elements.
@@ -77,7 +83,7 @@ static size_t node_resize_table(struct node_s *n, size_t size)
     if(!n || !size)
         return 0;
 
-    pr_dbg("n: %p, n->table: %p, size: %u", n, n->table, size);
+    pr_dbg("n: %p, n->table: %p, size: %lu", n, n->table, size);
 
     struct node_s **new_table = (struct node_s **)
         realloc(n->table, sizeof(struct node_s *) * size);
@@ -192,7 +198,7 @@ void node_free(struct node_s *n, bool recurse)
      */
     if(!n)
         return;
-    pr_dbg("%p (%c)", n, recurse ? 'T' : 'F');
+    pr_dbg("%s (%s) | recurse: %c", node_string(n), n->type->name, recurse ? 'T' : 'F');
 
     /*
      * After this, all the children along with the table itself
@@ -219,6 +225,9 @@ void node_free(struct node_s *n, bool recurse)
     /*
      * Free the node itself.
      */
+    node_free_all(n->str);
+    n->str = 0;
+
     n->data = 0;
     free(n);
 }
@@ -229,7 +238,7 @@ void node_free(struct node_s *n, bool recurse)
  */
 struct node_s *node_new(const struct node_type_s *type, const void *d, bool fsd)
 {
-    pr_dbg("type: %p, d: %p, node_type_node: %p", type, d, node_type_node);
+    pr_dbg("type: %s, d: %p", type->name, d);
     /*
      * Sanitize the input, so we don't waste time with null pointers.
      */
@@ -262,8 +271,11 @@ struct node_s *node_new(const struct node_type_s *type, const void *d, bool fsd)
     n->id = 0;
     n->len = 0;
     n->max = 0;
+    n->count = 1;
+    n->str = 0;
+    node_to_str(n);
 
-    pr_dbg("n: %p, data: %p", n, n->data);
+    pr_dbg("n: %s (%s)", node_string(n), n->type->name);
     return n;
 }
 
@@ -289,6 +301,45 @@ int node_diff(const struct node_s *a, const struct node_s *b)
         return NODE_TYPE_DIFF;
 
     return a->type->diff(a->data, b->data);
+}
+
+/*
+ * struct node_s *node_to_str(struct node_s *n)
+ * Returns the str representation of the node.
+ */
+struct node_s *node_to_str(struct node_s *n)
+{
+    if(!n)
+        return 0;
+
+    if(n->type == node_type_str)
+            return n;
+
+    if(n->type == node_type_node)
+        return 0;
+
+    node_free_all(n->str);
+
+    n->str = n->type->to_str(n->data);
+    return n->str;
+}
+
+/*
+ * char *node_string(struct node_s *n);
+ * Get the str buf associated with this node.
+ */
+char *node_string(struct node_s *n)
+{
+    if(!n)
+        return 0;
+
+    if(n->type == node_type_node)
+        return node_string((struct node_s *) n->data);
+
+    if(n->type == node_type_str)
+        return str_node_buf(n);
+
+    return str_node_buf(n->str);
 }
 
 /*
@@ -355,6 +406,54 @@ size_t node_put(struct node_s *n, size_t index, struct node_s *c)
     return n->len;
 }
 
+int node_bst_insert(struct node_s *a, struct node_s *b)
+{
+    if(!a || !b || (a->type != b->type))
+        return 0;
+
+    int diff = node_diff(a, b);
+
+    if(diff < 0) {
+        if(node_at(a, NODE_RIGHT)) {
+            return node_bst_insert(node_at(a, NODE_RIGHT), b);
+        } else {
+            node_put(a, NODE_RIGHT, b);
+        }
+    } else {
+        if(node_at(a, NODE_LEFT)) {
+            return node_bst_insert(node_at(a, NODE_LEFT), b);
+        } else {
+            node_put(a, NODE_LEFT, b);
+        }
+    }
+
+    return b->count;
+}
+
+void node_bt_for_each(struct node_s *n, void(*iter)(struct node_s *),
+    enum node_order_e o)
+{
+    if(!n || !iter)
+        return;
+
+    if(o > NODE_PRE_ORDER) {
+        node_bt_for_each(node_at(n, NODE_LEFT), iter, o);
+        if(o == NODE_POST_ORDER)
+            node_bt_for_each(node_at(n, NODE_RIGHT), iter, o);
+    }
+
+    iter(n);
+
+    switch(o) {
+        case NODE_PRE_ORDER:
+            node_bt_for_each(node_at(n, NODE_LEFT), iter, o);
+        case NODE_IN_ORDER:
+            node_bt_for_each(node_at(n, NODE_RIGHT), iter, o);
+        default:
+            ;
+    }
+}
+
 /*
  * struct node_s *node_release(struct node_s *n, size_t index)
  *  Release and return a child node from a parent.
@@ -402,7 +501,9 @@ struct node_type_s _type_node = {
     .size = sizeof(struct node_s),
     .freev = _node_free,
     .new = _node_new,
-    .diff = _node_diff
+    .diff = _node_diff,
+    .to_str = to_str,
+    .name = "node"
 };
 
 const struct node_type_s *node_type_node = &_type_node;
