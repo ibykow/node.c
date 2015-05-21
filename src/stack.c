@@ -37,7 +37,7 @@
  *      while((item = stack_pop(&my_stack))) {
  *
  *          // do something with each node item here.
- *          node_free(item, true);
+ *          node_free_all(item);
  *      }
  * }
  *
@@ -132,7 +132,7 @@ struct node_s *stack_pop(struct node_s **stack)
     /*
      * Free the, now empty, head of the stack.
      */
-    node_free(*stack, true);
+    node_free_all(*stack);
 
     /*
      * Move the stack down to the new head.
@@ -205,7 +205,7 @@ struct node_s *stack_deq(struct node_s **q)
          * We are assuming this node was created in the q_push process
          * and will therefore not free its data which is itself a node.
          */
-        node_free(current, true);
+        node_free_all(current);
 
     /*
      * Otherwise, if we don't have an owner then we are the last node
@@ -222,7 +222,7 @@ struct node_s *stack_deq(struct node_s **q)
         /*
          * Free the last node.
          */
-        node_free(*q, true);
+        node_free_all(*q);
 
         /*
          * Keep track of the fact that we're empty.

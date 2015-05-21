@@ -38,6 +38,9 @@
  */
 #define node_at(n, i) ((n && (n->len > i)) ? n->table[i] : 0)
 
+#define node_free_one(n) node_free(n, false)
+#define node_free_all(n) node_free(n, true)
+
 #define node_new_node(n) node_new(node_type_node, (struct node_s *) n, true)
 
 #define node_new_node_const(n) node_new(node_type_node, (struct node_s *) n, false)

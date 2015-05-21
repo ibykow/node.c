@@ -15,6 +15,7 @@
 
 #include "node.h"
 #include "str.h"
+#include "int.h"
 #include "stack.h"
 #include "test.h"
 

@@ -36,7 +36,7 @@
 
 static void _node_free(void *d)
 {
-    node_free((struct node_s *) d, true);
+    node_free_all((struct node_s *) d);
 }
 
 static void *_node_new(const void *d)
@@ -103,7 +103,7 @@ static size_t node_tighten_table(struct node_s *n, bool recurse)
      */
     if(!n->max)
         return 0;
-        
+
     /*
      * Rewind back to the previous available element.
      */
@@ -177,14 +177,11 @@ static struct node_s *node_adopt(struct node_s *n, struct node_s *c, size_t inde
 }
 
 /*
- * static and external variable declarations
- */
-
-/*
  * non-static functions
  */
 
 /*
+ * void node_free(struct node_s *n, bool recurse)
  * Free the current node, its value and recursively free
  * all of its children and their values and so on.
  */
@@ -227,6 +224,7 @@ void node_free(struct node_s *n, bool recurse)
 }
 
 /*
+ * struct node_s *node_new(const struct node_type_s *type, const void *d, bool fsd);
  * Create a new node given its type and a const representation of its data.
  */
 struct node_s *node_new(const struct node_type_s *type, const void *d, bool fsd)
@@ -270,6 +268,7 @@ struct node_s *node_new(const struct node_type_s *type, const void *d, bool fsd)
 }
 
 /*
+ * int node_diff(const struct node_s *a, const struct node_s *b);
  * Use this function instead of calling a node's diff directly.
  * We can quickly determine equality or inequality based on pointer,
  * and node type.
